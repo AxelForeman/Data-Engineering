@@ -1,0 +1,1327 @@
+{
+  "name": "LIB-IA · Reporte Comercial B&B",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lib-ia",
+        "options": {}
+      },
+      "id": "99253e39-a6ad-4057-a401-a8729628be35",
+      "name": "Webhook Evolution",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -4592,
+        272
+      ],
+      "webhookId": "lib-ia"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrae el mensaje del payload de Evolution y decide si se procesa.\n// Filtra mensajes propios, grupos, vacíos y números no autorizados.\n\n// ---- LISTA BLANCA ----\n// Formato internacional, sin +, guiones ni espacios.\nconst AUTORIZADOS = [\n  '50248664480', // Ana Waight\n  '50232134653', // Altan Ozler\n  '50258077538', // Jeffrey Chitamul\n  '50240582026', // Felipe Castañeda\n  '50230694290', // Axel Sambrano\n];\n\n// Array vacío [] permite cualquier número.\n// No es recomendable para producción.\n\n// Obtener payload de Evolution API\nconst entrada = $input.first().json;\nconst b = entrada.body || entrada;\nconst d = b.data || {};\nconst k = d.key || {};\n\n// Evolution puede entregar:\n// remoteJidAlt = número real, por ejemplo 50230694290@s.whatsapp.net\n// remoteJid    = LID interno, por ejemplo 65580526751932@lid\nconst remoteJid = (k.remoteJid || '').toString();\nconst remoteJidAlt = (k.remoteJidAlt || '').toString();\n\n// Priorizar siempre remoteJidAlt cuando esté disponible\nconst jid = remoteJidAlt || remoteJid;\n\n// Extraer únicamente el número\nconst numero = jid\n  .replace('@s.whatsapp.net', '')\n  .replace('@c.us', '')\n  .replace('@lid', '')\n  .replace(/\\D/g, '');\n\n// Detectar grupos usando ambos campos\nconst esGrupo =\n  remoteJid.includes('@g.us') ||\n  remoteJidAlt.includes('@g.us');\n\nconst propio = k.fromMe === true;\n\n// Extraer texto de los formatos más comunes de WhatsApp\nconst texto = (\n  d.message?.conversation ||\n  d.message?.extendedTextMessage?.text ||\n  d.message?.imageMessage?.caption ||\n  d.message?.videoMessage?.caption ||\n  ''\n).toString().trim();\n\n// Validar lista blanca\nconst autorizado =\n  AUTORIZADOS.length === 0 ||\n  AUTORIZADOS.includes(numero);\n\n// Decidir si se procesa\nconst procesar =\n  !propio &&\n  !esGrupo &&\n  texto.length > 0 &&\n  autorizado;\n\n// Resultado para los siguientes nodos\nreturn [{\n  json: {\n    procesar,\n    numero,\n    texto,\n    jid,\n    remoteJid,\n    remoteJidAlt,\n    sesion: numero,\n    token: Date.now().toString(),\n    motivo: propio\n      ? 'propio'\n      : esGrupo\n        ? 'grupo'\n        : !texto\n          ? 'vacio'\n          : !autorizado\n            ? 'no-autorizado'\n            : 'ok'\n  }\n}];"
+      },
+      "id": "27bbbc0d-5373-4387-ae69-c828e65554fd",
+      "name": "Preparar entrada",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -4384,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ $json.procesar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bab70d90-affa-49a6-8af4-8e190095f8d9",
+      "name": "¿Procesar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -4160,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=debounce:{{ $json.numero }}",
+        "value": "={{ $json.token }}",
+        "expire": true
+      },
+      "id": "52cf8c56-6485-4e4b-bd45-2d581a5c60ef",
+      "name": "Debounce SET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -3936,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "amount": 0
+      },
+      "id": "809452a4-f28a-4de6-8175-6ea957808976",
+      "name": "Esperar 8s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -3744,
+        192
+      ],
+      "webhookId": "espera-lib-ia"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "tokenActual",
+        "key": "=debounce:{{ $('Preparar entrada').first().json.numero }}",
+        "options": {}
+      },
+      "id": "999622e9-95c5-4476-b0ea-52e9aed8a612",
+      "name": "Debounce GET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -3536,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1",
+              "leftValue": "={{ $json.tokenActual }}",
+              "rightValue": "={{ $('Preparar entrada').first().json.token }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9377a367-14cb-4c15-b106-092a0eaf72d4",
+      "name": "¿Último mensaje?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -3344,
+        192
+      ],
+      "notes": "Si llegó otro mensaje en los 8s, este se descarta"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analiza el mensaje: intencion, periodo, unidad, region y detalle.\n\nconst e = $('Preparar entrada').first().json;\nconst msg = e.texto.toLowerCase().trim();\nconst sesion = e.sesion;\nconst numero = e.numero;\n\nconst MESES = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6,\n  julio:7, agosto:8, septiembre:9, setiembre:9, octubre:10,\n  noviembre:11, diciembre:12 };\n\nconst REGIONES = ['occidente','centro','oriente','walmart','gta',\n  'la bodegona','comercial los hermanos','tiendas de oriente',\n  'unisuper','pricesmart','distribuidores','institucional',\n  'internacional','tomsal honduras','tomsal el salvador',\n  'tomsal nicaragua','tradicional','moderno','tomsales','guatemala'];\n\n// ---------- intencion ----------\nconst PALABRAS = ['venta','vendi','ppto','presupuesto','reporte','resumen',\n  'como vamos','cómo vamos','como va','cómo va','cumplimiento','meta',\n  'cajas','valores','cartera','activacion','activación','region','región',\n  'gerencia','desempeño','desempeno','vs aa','año anterior','ano anterior',\n  'cuanto','cuánto','mes pasado','detalle','peor','mejor'];\n\nlet esConsulta = PALABRAS.some(p => msg.includes(p))\n              || Object.keys(MESES).some(m => msg.includes(m))\n              || REGIONES.some(r => msg.includes(r))\n              || /\\b20\\d{2}\\b/.test(msg);\n\nconst CHARLA = ['hola','buenas','buen dia','buen día','buenos dias',\n  'buenos días','buenas tardes','buenas noches','gracias','ok','listo',\n  'adios','adiós','hasta luego','que tal','qué tal','quien sos','quién sos',\n  'quien eres','quién eres','que haces','qué haces','ayuda','help','menu','menú'];\nconst esCharla = CHARLA.some(c => msg === c || msg.startsWith(c + ' ')\n                                || msg.startsWith(c + ',') || msg.endsWith(' ' + c));\nif (esCharla && !Object.keys(MESES).some(m => msg.includes(m))) esConsulta = false;\nif (msg.length < 3) esConsulta = false;\n\n// ---------- periodo ----------\nconst hoy = new Date();\nlet anio = hoy.getFullYear();\nlet mes  = hoy.getMonth() + 1;\n\nfor (const [nombre, num] of Object.entries(MESES)) {\n  if (msg.includes(nombre)) { mes = num; break; }\n}\nconst mAnio = msg.match(/\\b(20\\d{2})\\b/);\nif (mAnio) anio = parseInt(mAnio[1], 10);\nif (msg.includes('mes pasado') || msg.includes('mes anterior')) {\n  mes = mes - 1;\n  if (mes === 0) { mes = 12; anio = anio - 1; }\n}\n\n// saneo: evita inyeccion SQL\nanio = Math.min(Math.max(parseInt(anio,10) || 2026, 2019), 2030);\nmes  = Math.min(Math.max(parseInt(mes,10)  || 1, 1), 12);\n\n// ---------- unidad ----------\nconst unidad = (msg.includes('valor') || msg.includes('quetzal')\n             || msg.includes('dinero') || msg.includes('factur')\n             || msg.includes('monto')  || msg.includes('ingreso')\n             || msg.includes('vendimos en q')\n             || msg.includes('venta en q') || / en q\\b/.test(msg))\n             ? 'valores' : 'cajas';\n\n// ---------- filtro ----------\nlet filtro = null;\nfor (const r of REGIONES) {\n  if (msg.includes(r)) { filtro = r.toUpperCase(); break; }\n}\nconst cuantas = REGIONES.filter(r => msg.includes(r)).length;\nif (cuantas > 1 || msg.includes('compar') || msg.includes('peor')\n   || msg.includes('mejor') || msg.includes('ranking')) filtro = null;\n\n// ---------- detalle ----------\nconst detalle = msg.includes('detalle') || msg.includes('todas')\n             || msg.includes('todo') || msg.includes('por region')\n             || msg.includes('por región') || msg.includes('completo')\n             || filtro !== null;\n\n\n// ---------- detalle por vendedor / cliente / familia / producto ----------\n// Palabras que abren la consulta de detalle. Si no aparece ninguna,\n// nivel = null y el flujo sigue como siempre (resumen + imagen).\nconst NIVELES = [\n  { nivel: 'VENDEDOR', claves: ['vendedores','vendedor','por vendedor','ruteros'] },\n  { nivel: 'CLIENTE',  claves: ['clientes','cliente','por cliente','cadena'] },\n  { nivel: 'PRODUCTO', claves: ['productos','producto','sku','presentacion','presentación'] },\n  { nivel: 'FAMILIA',  claves: ['familias','familia','por familia','linea','línea'] },\n];\n\nlet nivel = null, termino = null;\nfor (const n of NIVELES) {\n  for (const k of n.claves) {\n    const i = msg.indexOf(k);\n    if (i >= 0) {\n      nivel = n.nivel;\n      // lo que viene despues de la palabra es el termino de busqueda\n      let resto = msg.slice(i + k.length);\n      resto = resto.replace(/^[\\s:,]*(de|del|la|el|los|las|en)\\s+/i, '').trim();\n      resto = resto.replace(/[?¿!¡.,;]+$/g, '')\n                   .replace(/\\b(en\\s+)?(cajas|valores|quetzales|q)\\b.*$/i, '')\n                   .replace(/\\b(de|en)\\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre).*$/i, '')\n                   .replace(/\\b20\\d\\d\\b.*$/, '')\n                   .trim();\n      // solo letras, numeros y espacios: evita inyeccion en el EXEC\n      resto = resto.replace(/[^a-z0-9ñáéíóúü ]/gi, '').trim().slice(0, 60);\n      if (resto.length >= 3) termino = resto;\n      break;\n    }\n  }\n  if (nivel) break;\n}\n\n// cuantas filas: por defecto 10; \"top 5\", \"los 15\"\nlet top = 10;\nconst mTop = msg.match(/\\b(?:top|primeros|mejores|los)\\s+(\\d{1,2})\\b/);\nif (mTop) top = Math.min(25, Math.max(3, parseInt(mTop[1], 10)));\n// \"peores\" / \"mas bajos\" -> los de menor venta\nif (/\\b(peores|mas bajos|más bajos|menor venta|ultimos|últimos)\\b/.test(msg)) top = -top;\n\n// ---------- cache ----------\n// el mes en curso NO se cachea: cambia durante el dia\nconst esMesActual = (anio === hoy.getFullYear() && mes === hoy.getMonth() + 1);\n// mes en curso: cache corto de 5 minutos (TTL 300s en Cache SET),\n// asi todos los que pregunten en esa ventana ven la misma cifra\n// y NAV recibe una sola consulta.\n// meses cerrados: cache de 12 horas.\nconst cacheKey = esMesActual\n  ? `reporte:vivo:${anio}:${String(mes).padStart(2,'0')}`\n  : `reporte:${anio}:${String(mes).padStart(2,'0')}`;\n\nreturn [{ json: {\n  esConsulta, anio, mes, unidad, filtro, detalle,\n  nivel, termino, top,\n  esMesActual, cacheKey, pregunta: msg, sesion, numero\n}}];"
+      },
+      "id": "b5504fee-e31c-4f1e-b590-0b364a496192",
+      "name": "Analizar mensaje",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1520,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.esConsulta }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b7695475-a7ec-4a16-8a62-076437fc351c",
+      "name": "¿Es consulta?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1296,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Respuesta directa: no toca SQL, no llama al modelo, no cuesta tokens.\n\nconst p = $input.first().json;\nconst m = (p.pregunta || '').toLowerCase();\n\nlet r;\n\nif (m.includes('gracias')) {\n\n  r = 'Con gusto. Quedo atento a cualquier otra consulta.';\n\n} else if (\n  m.includes('ayuda') ||\n  m.includes('menu') ||\n  m.includes('menú') ||\n  m.includes('help') ||\n  m.includes('que haces') ||\n  m.includes('qué haces') ||\n  m.includes('quien') ||\n  m.includes('quién')\n) {\n\n  r = '*LIB-IA · Asistente de Ventas e Inteligencia Comercial*\\n\\n'\n    + 'Hola. Soy *LIB-IA*, asistente virtual de ventas e inteligencia comercial.\\n\\n'\n    + 'Estoy disponible para apoyarle con consultas sobre resultados de ventas, desempeño comercial y análisis de indicadores clave por país, región y gerencia.';\n\n} else if (\n  m.includes('adios') ||\n  m.includes('adiós') ||\n  m.includes('hasta luego')\n) {\n\n  r = 'Gracias por utilizar LIB-IA. Hasta luego.';\n\n} else {\n\n  r = 'Hola. Soy *LIB-IA*, asistente virtual de ventas e inteligencia comercial.\\n\\n'\n    + 'Estoy disponible para apoyarle con consultas sobre resultados de ventas, desempeño comercial y análisis de indicadores clave por país, región y gerencia.';\n\n}\n\nreturn [{\n  json: {\n    output: r,\n    numero: p.numero,\n    tipo: 'charla'\n  }\n}];\n"
+      },
+      "id": "8c0e49fa-b03b-49e4-8a5d-6542919bba9f",
+      "name": "Respuesta directa",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "cache",
+        "key": "={{ $json.cacheKey }}",
+        "options": {}
+      },
+      "id": "61009282-a1cd-406f-aafa-fce679bed103",
+      "name": "Cache GET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -1072,
+        96
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.cache }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c5bcff5b-832e-4683-817a-6f875f39fc45",
+      "name": "¿Hay cache?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -880,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SET NOCOUNT ON;\nEXEC dbo.usp_ReporteComercialLive_v2\n     @Anio = {{ $('Analizar mensaje').first().json.anio }},\n     @Mes  = {{ $('Analizar mensaje').first().json.mes }};",
+        "options": {}
+      },
+      "id": "6352af14-fed2-4233-ba2f-e97b3303ab36",
+      "name": "SQL Reporte",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "microsoftSql": {
+          "id": "MYKRUGUDkDkQeb6m",
+          "name": "Microsoft SQL account"
+        }
+      },
+      "notes": "usp v2: catalogo materializado, ~2s. Antes 14s."
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $('Analizar mensaje').first().json.cacheKey }}",
+        "value": "={{ JSON.stringify($input.all().map(i => i.json)) }}",
+        "expire": true,
+        "ttl": "={{ $('Analizar mensaje').first().json.esMesActual ? 300 : 43200 }}"
+      },
+      "id": "a8085488-1d28-47cc-b2da-820ecefe323f",
+      "name": "Cache SET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -432,
+        192
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "TTL 12 h. El mes en curso escribe en llave 'novale'."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza el origen (cache o SQL), aplica el filtro y devuelve N items.\n\nconst p = $('Analizar mensaje').first().json;\nlet filas = null;\n\ntry {\n  const c = $('Cache GET').first().json.cache;\n  if (c && typeof c === 'string' && c.startsWith('[')) filas = JSON.parse(c);\n} catch (e) { /* sin cache */ }\n\nif (!filas) {\n  try { filas = $('SQL Reporte').all().map(i => i.json); } catch (e) { filas = []; }\n}\n\nfilas = (filas || []).filter(f => f && f.Region\n         && f.Pais !== '(SIN RESOLVER)'\n         && f.Region !== '(SIN RESOLVER)');\n\nif (!filas.length) {\n  return [{ json: { _vacio: true, anio: p.anio, mes: p.mes } }];\n}\n\nif (p.filtro) {\n  const f = filas.filter(r => r.Region === p.filtro\n                           || r.Gerencia === p.filtro\n                           || r.Pais === p.filtro);\n  if (f.length) filas = f;\n}\n\nreturn filas.map(f => ({ json: f }));"
+      },
+      "id": "0b07129f-a406-4736-a7b0-d63e6324fee5",
+      "name": "Preparar datos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Arma la tarjeta y el contexto. Devuelve UN item.\n// Formato WhatsApp completo: negritas, cursivas, block quote (>) y\n// monospace (```) que preserva el espaciado y permite tablas alineadas.\n\nconst p     = $('Analizar mensaje').first().json;\nconst filas = $input.all().map(i => i.json).filter(f => f && f.Region);\n\n// Orden del dashboard. NO es alfabetico: es orden de negocio.\nconst ORDEN_PAIS = ['GUATEMALA','ESTADOS UNIDOS','CENTROAMERICA'];\nconst ORDEN_GER  = ['TRADICIONAL','MODERNO','DISTRIBUIDORES',\n                    'INSTITUCIONAL','INTERNACIONAL','TOMSALES'];\nconst pos = (v, l) => { const i = l.indexOf(v); return i < 0 ? l.length : i; };\n\nconst MESES = ['','enero','febrero','marzo','abril','mayo','junio',\n  'julio','agosto','septiembre','octubre','noviembre','diciembre'];\nconst periodo = `${MESES[p.mes]} ${p.anio}`;\n\n// pais > gerencia (orden de negocio), region por presupuesto desc\nconst ordenarFilas = (arr, P) => arr.slice().sort((a,b) =>\n  pos(a.Pais, ORDEN_PAIS) - pos(b.Pais, ORDEN_PAIS)\n  || pos(a.Gerencia, ORDEN_GER) - pos(b.Gerencia, ORDEN_GER)\n  || P(b) - P(a));\n\nif (!filas.length) {\n  return [{ json: {\n    tarjeta:  `No hay información para ${periodo}.`,\n    contexto: `SIN DATOS para ${periodo}.`,\n    pregunta: p.pregunta, sesion: p.sesion, numero: p.numero, filas: 0\n  }}];\n}\n\nconst esCajas = p.unidad === 'cajas';\nconst u = esCajas ? 'cajas' : 'Q';\n\nconst n = (v) => Math.round(Number(v) || 0).toLocaleString('es-GT');\n// abrevia solo valores; las cajas se leen mejor completas\nconst corto = (v) => {\n  if (esCajas) return Math.round(v).toLocaleString('es-GT');\n  if (Math.abs(v) >= 1e6) return (v/1e6).toFixed(1) + 'M';\n  if (Math.abs(v) >= 1e3) return (v/1e3).toFixed(0) + 'K';\n  return Math.round(v).toString();\n};\nconst sem = (x) => x >= 100 ? '🟢' : x >= 85 ? '🟡' : '🔴';\nconst mk  = (x) => x >= 100 ? '+'  : x >= 85 ? '~'  : '!';\n\nconst V  = (f) => esCajas ? f.Venta_Cajas   : f.Venta_Valores;\nconst P  = (f) => esCajas ? f.Ppto_Cajas    : f.Ppto_Valores;\nconst L  = (f) => esCajas ? f.LY_Cajas      : f.LY_Valores;\nconst PP = (f) => esCajas ? f.PctPpto_Cajas : f.PctPpto_Valores;\nconst PA = (f) => esCajas ? f.PctAA_Cajas   : f.PctAA_Valores;\n// columnas del mes en curso; vienen NULL cuando el mes ya cerro\nconst PED = (f) => esCajas ? f.Pedidos_Cajas    : f.Pedidos_Valores;\nconst MAS = (f) => esCajas ? f.MasPedidos_Cajas : f.MasPedidos_Valores;\nconst PAC = (f) => esCajas ? f.PptoPacing_Cajas : f.PptoPacing_Valores;\n\nconst vivo = filas[0].EsMesActual === 1 || filas[0].EsMesActual === true;\nconst dias = filas[0].DiasTranscurridos, diasMes = filas[0].DiasMes;\n\nconst tV = filas.reduce((a,f) => a + V(f), 0);\nconst tP = filas.reduce((a,f) => a + P(f), 0);\nconst tL = filas.reduce((a,f) => a + L(f), 0);\nconst tPct = tP ? (tV / tP * 100) : 0;\nconst tAA  = tL ? (tV / tL * 100 - 100) : 0;\n\nconst tPED = vivo ? filas.reduce((a,f) => a + (PED(f) || 0), 0) : null;\nconst tMAS = vivo ? filas.reduce((a,f) => a + (MAS(f) || 0), 0) : null;\nconst tPAC = vivo ? filas.reduce((a,f) => a + (PAC(f) || 0), 0) : null;\nconst tPctPac = (vivo && tPAC) ? (tV / tPAC * 100) : null;\nconst tPctMas = (vivo && tPAC) ? (tMAS / tPAC * 100) : null;\n\nconst ordenadas = ordenarFilas(filas, P);\n\n// agrupado por gerencia\nconst porGer = {};\nfor (const f of ordenadas) {\n  const g = porGer[f.Gerencia] || (porGer[f.Gerencia] = { v:0, p:0, l:0, pac:0 });\n  g.v += V(f); g.p += P(f); g.l += L(f); g.pac += (PAC(f) || 0);\n}\nconst gerencias = Object.entries(porGer)\n  .map(([k,g]) => ({ nombre:k, v:g.v, p:g.p, pac:g.pac,\n                     pct: g.p ? g.v/g.p*100 : 0,\n                     aa:  g.l ? g.v/g.l*100-100 : 0 }))\n  .sort((a,b) => pos(a.nombre, ORDEN_GER) - pos(b.nombre, ORDEN_GER));\n\n// ───────────── TARJETA ─────────────\nlet card;\n\nif (filas.length === 1) {\n  // ── una sola region ──\n  const f = filas[0];\n  card  = `*${f.Region}*\\n_${f.Pais} · ${f.Gerencia} · ${periodo}_\\n\\n`;\n  card += `> Venta *${n(V(f))}* ${u}\\n`;\n  card += `> Meta  ${n(P(f))} ${u}\\n`;\n  card += `> ${sem(PP(f))} *${PP(f)}%* del presupuesto\\n`;\n  card += `> ${PA(f) >= 0 ? '▲' : '▼'} ${PA(f)}% vs año anterior\\n`;\n  if (vivo) {\n    const pac = PAC(f), pp = pac ? (V(f)/pac*100) : 0;\n    card += `>\\n`;\n    card += `> _Mes en curso · día ${dias} de ${diasMes}_\\n`;\n    card += `> Pedidos ${n(PED(f))} ${u}\\n`;\n    card += `> +PED    *${n(MAS(f))}* ${u}\\n`;\n    card += `> Meta al día ${n(Math.round(pac))}\\n`;\n    card += `> ${sem(pp)} *${pp.toFixed(1)}%* del ritmo esperado\\n`;\n  }\n  card += `\\nCartera ${n(f.Cartera)}  ·  Activación ${n(f.Activacion)}`;\n\n} else if (p.detalle) {\n  // ── detalle por region ──\n  card  = `*DETALLE POR REGIÓN*\\n_${periodo} · ${esCajas?'Cajas':'Valores'}_\\n\\n`;\n  card += '```\\n';\n  card += 'REGIÓN'.padEnd(14) + 'VENTA'.padStart(7) + '%'.padStart(7) + '\\n';\n  card += '─'.repeat(28) + '\\n';\n  let ger = null;\n  for (const f of ordenadas) {\n    if (f.Gerencia !== ger) { ger = f.Gerencia; card += `${ger}\\n`; }\n    card += ('  ' + f.Region).slice(0,13).padEnd(14)\n          + corto(V(f)).padStart(7)\n          + (mk(PP(f)) + Math.round(PP(f))).padStart(7) + '\\n';\n  }\n  card += '─'.repeat(28) + '\\n';\n  card += 'TOTAL'.padEnd(14) + corto(tV).padStart(7)\n        + (mk(tPct) + Math.round(tPct)).padStart(7) + '\\n';\n  card += '```\\n\\n_+ sobre meta · ~ cerca · ! debajo_';\n\n} else {\n  // ── resumen: KPI + tabla por gerencia ──\n  card  = `*RESUMEN TOTAL EMPRESA*\\n_${periodo} · ${esCajas?'Cajas':'Valores'}_\\n\\n`;\n  card += `> Venta *${n(tV)}* ${u}\\n`;\n  card += `> Meta  ${n(tP)} ${u}\\n`;\n  card += `> ${sem(tPct)} *${tPct.toFixed(1)}%* del presupuesto\\n`;\n  card += `> ${tAA >= 0 ? '▲' : '▼'} ${tAA.toFixed(1)}% vs año anterior\\n`;\n  if (vivo) {\n    card += `>\\n`;\n    card += `> _Mes en curso · día ${dias} de ${diasMes}_\\n`;\n    card += `> Pedidos ${n(tPED)} ${u}\\n`;\n    card += `> +PED    *${n(tMAS)}* ${u}\\n`;\n    card += `> Meta al día ${n(Math.round(tPAC))}\\n`;\n    card += `> ${sem(tPctPac)} *${tPctPac.toFixed(1)}%* del ritmo esperado\\n`;\n    card += `> ${sem(tPctMas)} ${tPctMas.toFixed(1)}% con pedidos\\n`;\n  }\n  card += `\\n`;\n  card += '```\\n';\n  card += 'GERENCIA'.padEnd(15) + 'VENTA'.padStart(7)\n        + (vivo ? '%RITMO' : '%PPTO').padStart(7) + '\\n';\n  card += '─'.repeat(29) + '\\n';\n  for (const g of gerencias) {\n    // en el mes en curso el % relevante es contra el ritmo esperado\n    const x = vivo && g.pac ? (g.v / g.pac * 100) : g.pct;\n    card += g.nombre.slice(0,14).padEnd(15)\n          + corto(g.v).padStart(7)\n          + (mk(x) + x.toFixed(1)).padStart(7) + '\\n';\n  }\n  card += '```\\n';\n  card += vivo ? '_% contra el ritmo esperado al día de hoy_\\n\\n'\n               : '\\n';\n  card += `_Escriba *detalle* para las ${filas.length} regiones_`;\n}\n\n// ───────────── CONTEXTO PARA EL AGENTE ─────────────\nlet ctx = `PERIODO: ${periodo} | UNIDAD: ${u}`;\nif (p.filtro) ctx += ` | FILTRO: ${p.filtro}`;\nctx += `\\nTOTAL: venta ${n(tV)}, presupuesto ${n(tP)}, `;\nctx += `cumplimiento ${tPct.toFixed(1)}%, vs año anterior ${tAA.toFixed(1)}%\\n`;\nif (vivo) {\n  ctx += `MES EN CURSO: dia ${dias} de ${diasMes}. `;\n  ctx += `Pedidos ${n(tPED)}, venta+pedidos ${n(tMAS)}, `;\n  ctx += `meta proporcional a los dias ${n(Math.round(tPAC))}, `;\n  ctx += `cumplimiento vs ese ritmo ${tPctPac.toFixed(1)}%. `;\n  ctx += `IMPORTANTE: al comentar el mes en curso usa el cumplimiento `;\n  ctx += `contra el ritmo esperado, no contra el presupuesto completo, `;\n  ctx += `porque el mes aun no termina.\\n`;\n}\nctx += `\\n`;\nctx += `POR GERENCIA:\\n`;\nfor (const g of gerencias) {\n  ctx += `- ${g.nombre}: venta ${n(g.v)}, ppto ${n(g.p)}, `;\n  ctx += `cumplimiento ${g.pct.toFixed(1)}%, vs AA ${g.aa.toFixed(1)}%\\n`;\n}\nctx += `\\nPOR REGION:\\n`;\nfor (const f of ordenadas) {\n  ctx += `- ${f.Region} (${f.Pais}/${f.Gerencia}): venta ${n(V(f))}, `;\n  ctx += `ppto ${n(P(f))}, año anterior ${n(L(f))}, `;\n  ctx += `cumplimiento ${PP(f)}%, vs AA ${PA(f)}%, `;\n  ctx += `cartera ${f.Cartera}, activacion ${f.Activacion}\\n`;\n}\n\nreturn [{ json: {\n  tarjeta: card, contexto: ctx,\n  pregunta: p.pregunta, sesion: p.sesion, numero: p.numero,\n  anio: p.anio, mes: p.mes, unidad: p.unidad,\n  filtro: p.filtro, detalle: p.detalle, filas: filas.length\n}}];"
+      },
+      "id": "384f2a87-3dd9-464d-8efd-615c0f0d1799",
+      "name": "Armar tarjeta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://reporte-render:8090/render",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  anio:   $('Analizar mensaje').first().json.anio,\n  mes:    $('Analizar mensaje').first().json.mes,\n  unidad: $('Analizar mensaje').first().json.unidad,\n  filas:  $input.all().map(item => item.json)\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "d86c16c3-d16f-405a-ae19-e074e74d6360",
+      "name": "Render PNG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        272
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst bin  = item.binary || {};\nconst campo = bin.data ? 'data' : Object.keys(bin)[0];\n\nif (!campo) {\n  throw new Error('Sin binario del render');\n}\n\n// lee el archivo aunque n8n lo tenga en disco (filesystem-v2)\nconst buffer = await this.helpers.getBinaryDataBuffer(0, campo);\nconst b64 = buffer.toString('base64');\n\nconst p = $('Analizar mensaje').first().json;\nconst MESES = ['','enero','febrero','marzo','abril','mayo','junio',\n  'julio','agosto','septiembre','octubre','noviembre','diciembre'];\n\nreturn [{ json: {\n  number:    $('Preparar entrada').first().json.numero,\n  mediatype: 'image',\n  mimetype:  'image/png',\n  fileName:  `reporte_${p.anio}_${String(p.mes).padStart(2,'0')}.png`,\n  caption:   `Reporte comercial · ${MESES[p.mes]} ${p.anio}`,\n  media:     b64\n}}];"
+      },
+      "id": "6ccab6f5-852f-41f8-92bd-9dcbbacdcdec",
+      "name": "Preparar imagen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        496
+      ],
+      "notes": "Resuelve el base64. $binary no funciona dentro de JSON.stringify."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=PREGUNTA DEL USUARIO:\n{{ $json.pregunta }}\n\nDATOS REALES DEL REPORTE (única fuente permitida):\n{{ $json.contexto }}\n\nTARJETA YA FORMATEADA (devuélvala tal cual si solicitan el resumen o el reporte):\n{{ $json.tarjeta }}",
+        "options": {
+          "systemMessage": "Usted es LIB-IA, asistente del reporte comercial de Productos Alimenticios Centroamericanos (B&B). Se dirige a gerentes y directores.\n\nIDENTIDAD: si le preguntan quién es, responda que es LIB-IA, el asistente del reporte comercial de B&B. No invente capacidades que no tiene.\n\nREGISTRO: trato de usted en todo momento. Lenguaje corporativo, sobrio y preciso. Nada de emojis en el texto que usted escriba, ni de expresiones coloquiales. Los indicadores de semáforo de la tarjeta sí se conservan, porque son parte del formato del reporte.\n\nREGLA DE ORO: únicamente puede utilizar las cifras contenidas en DATOS REALES. No estime, no proyecte y no calcule valores que no estén presentes. Si la consulta excede lo que contienen los datos, indíquelo con claridad y ofrezca lo que sí está disponible.\n\nCÓMO RESPONDER:\n- Si solicitan el resumen o el reporte, entregue la TARJETA sin modificarla ni agregar comentarios.\n- Ante una consulta sobre una región específica, responda de forma concisa: venta, presupuesto, porcentaje de cumplimiento y variación contra el año anterior.\n- Si preguntan qué región presenta mejor o peor desempeño, compárelas por cumplimiento y mencione las dos o tres más relevantes.\n- Si consultan las causas de un resultado, aclare que la información disponible refleja el resultado, no sus causas, y señale únicamente lo que los datos evidencian.\n\nFORMATO: WhatsApp admite *negritas* con un asterisco y _cursivas_ con guión bajo. No utilice tablas markdown ni encabezados. Respuestas breves: se leen en teléfono.\n\nDEFINICIONES: cajas son unidades físicas; valores, quetzales sin IVA. PPTO corresponde al presupuesto del mes. \"vs AA\" compara contra el mismo mes del año anterior. Cartera son los clientes con meta asignada y Activación los que registraron compra. La columna Pedidos no se incluye, ya que solo existe durante el mes en curso.\n\nSi la consulta no corresponde al reporte comercial, indíquelo con cortesía y precise el alcance de su función."
+        }
+      },
+      "id": "921bf48a-146f-4f72-acb1-6cd0d644dc70",
+      "name": "LIB-IA",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-5-mini",
+        "options": {}
+      },
+      "id": "2f3a7bc5-2ae8-4fb2-8875-ae41a895a539",
+      "name": "Azure OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAzureOpenAi",
+      "typeVersion": 1,
+      "position": [
+        176,
+        208
+      ],
+      "credentials": {
+        "azureOpenAiApi": {
+          "id": "iNyBKXMGzi5OrJWo",
+          "name": "Azure Open AI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Analizar mensaje').first().json.sesion }}",
+        "contextWindowLength": 10
+      },
+      "id": "4f7b3736-4547-496e-973e-32641637b207",
+      "name": "Memoria Redis",
+      "type": "@n8n/n8n-nodes-langchain.memoryRedisChat",
+      "typeVersion": 1.4,
+      "position": [
+        368,
+        208
+      ],
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://stack-evolution:8080/message/sendText/Sales_BYB",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "7fe8a8741dac02abe89b4a66d7da7f3ace935e967c7ab5cef67d1245257c4094"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  number: ($json.numero || $('Analizar mensaje').first().json.numero),\n  text:   ($json.output || $json.tarjeta)\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "dea0b35c-fa4b-4b00-b072-fd2f15655797",
+      "name": "Enviar texto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        832
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Reemplazar TU_API_KEY por la apikey de Evolution"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://stack-evolution:8080/message/sendMedia/Sales_BYB",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "7fe8a8741dac02abe89b4a66d7da7f3ace935e967c7ab5cef67d1245257c4094"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "ab02ee21-80d9-4140-81fe-4deef7f5bbe3",
+      "name": "Enviar imagen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        336,
+        496
+      ],
+      "executeOnce": true,
+      "onError": "continueRegularOutput",
+      "notes": "El body viene armado desde 'Preparar imagen'"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "auth",
+        "key": "=auth:{{ $('Preparar entrada').first().json.numero }}",
+        "options": {}
+      },
+      "id": "c0af4de9-f72b-4278-b514-9070e78d1357",
+      "name": "Auth GET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -3120,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verificacion en dos pasos:\n//   1) la persona escribe su CODIGO DE EMPLEADO (debe ser el de su numero)\n//   2) le llega un codigo de 6 digitos a su correo corporativo y lo escribe\n// Verificado queda activo hasta la medianoche de Guatemala.\n// Estado del proceso en Redis otp:{numero} -> { fase: 'empleado' | 'correo', ... }\n\nconst EMPLEADOS = [\n  { numero: '50248664480', codigo: '002295', correo: 'awaight@productosbyb.com',    saludo: 'Bienvenida, Ana' },\n  { numero: '50232134653', codigo: '004156', correo: 'aozler@productosbyb.com',     saludo: 'Bienvenido, Altan' },\n  { numero: '50258077538', codigo: '004294', correo: 'jchitamul@productosbyb.com',  saludo: 'Bienvenido, Jeffrey' },\n  { numero: '50240582026', codigo: '004298', correo: 'fcastaneda@productosbyb.com', saludo: 'Bienvenido, Felipe' },\n  { numero: '50230694290', codigo: '004384', correo: 'asambrano@productosbyb.com',  saludo: 'Bienvenido, Axel' },\n];\nconst VIGENCIA_OTP = 600;   // 10 min para escribir el codigo del correo\nconst VENTANA      = 900;   // 15 min para contar intentos del codigo de empleado\nconst MAX_INTENTOS = 3;\nconst BLOQUEO      = 900;   // 15 min tras 3 fallos\n\nconst e = $('Preparar entrada').first().json;\nconst numero = e.numero;\nconst texto  = e.texto || '';\nconst ahora  = Math.floor(Date.now() / 1000);\nconst leer   = v => { if (!v) return null; try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (x) { return null; } };\nconst plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;\n\nconst emp = EMPLEADOS.find(x => x.numero === numero);\nif (!emp) {\n  return [{ json: { estado: 'recordar', numero, output: 'Este número no está registrado para usar LIB-IA.' } }];\n}\n\n// 1) Sesion vigente\n// Se lee de cada nodo por nombre: el Redis GET no conserva lo que traia el nodo anterior\nconst sesion = leer($('Auth GET').first().json.auth);\nif (sesion) {\n  return [{ json: { estado: 'ok', numero, empleado: { codigo: emp.codigo, correo: emp.correo } } }];\n}\n\nconst otp = leer($('OTP GET').first().json.otp) || {};\nconst authTtl = Math.max(60, 86400 - ((ahora - 6 * 3600) % 86400));  // hasta medianoche GT\n\n// 2) Bloqueado\nif (otp.bloqueado) {\n  const min = Math.max(1, Math.ceil((otp.expira - ahora) / 60));\n  return [{ json: { estado: 'recordar', numero,\n    output: `⏳ Por seguridad, el acceso está pausado. Intente de nuevo en ${plural(min, 'minuto', 'minutos')}.` } }];\n}\n\nconst bloquear = () => ({ estado: 'fallo', numero,\n  otpValor: JSON.stringify({ bloqueado: true, expira: ahora + BLOQUEO }), otpTtl: BLOQUEO,\n  output: '⛔ Se agotaron los intentos. Por seguridad, podrá intentarlo de nuevo en 15 minutos.' });\n\n// 3) Paso 2: esperando el codigo que se envio al correo\nif (otp.fase === 'correo') {\n  const escrito = (texto.match(/\\b\\d{6}\\b/) || [])[0];\n\n  if (!escrito) {\n    return [{ json: { estado: 'recordar', numero,\n      output: '📧 Escriba el código de 6 dígitos que le enviamos a su *correo corporativo*.' } }];\n  }\n  if (escrito === otp.codigo) {\n    return [{ json: { estado: 'nuevo', numero, authTtl,\n      authValor: JSON.stringify({ codigo: emp.codigo, desde: new Date().toISOString() }),\n      output: `✅ *Acceso verificado*\\n\\n${emp.saludo}.\\nSu acceso queda activo hasta la medianoche.\\n\\n¿Qué desea consultar? Por ejemplo: _¿cómo vamos?_` } }];\n  }\n  if (escrito === emp.codigo) {   // volvio a escribir su codigo de empleado: no cuenta como fallo\n    return [{ json: { estado: 'recordar', numero,\n      output: '👍 Ese es su código de empleado. Ahora escriba el código de 6 dígitos que le llegó a su *correo corporativo*.' } }];\n  }\n  const intentos = (otp.intentos || 0) + 1;\n  if (intentos >= MAX_INTENTOS) return [{ json: bloquear() }];\n  return [{ json: { estado: 'fallo', numero,\n    otpValor: JSON.stringify({ ...otp, intentos }), otpTtl: Math.max(1, otp.expira - ahora),\n    output: `❌ El código no es correcto. Le ${MAX_INTENTOS - intentos === 1 ? 'queda' : 'quedan'} ${plural(MAX_INTENTOS - intentos, 'intento', 'intentos')}.` } }];\n}\n\n// 4) Paso 1: pedir / validar el codigo de empleado\nconst candidatos = (texto.match(/\\b\\d{3,6}\\b/g) || []).map(c => c.padStart(6, '0'));\n\nif (candidatos.includes(emp.codigo)) {\n  const codigo = String(Math.floor(100000 + Math.random() * 900000));\n  return [{ json: { estado: 'enviar', numero, correo: emp.correo, codigo,\n    otpValor: JSON.stringify({ fase: 'correo', codigo, intentos: 0, expira: ahora + VIGENCIA_OTP }),\n    otpTtl: VIGENCIA_OTP,\n    output: '📧 Gracias. Le enviamos un código de verificación a su *correo corporativo*.\\n\\nEscríbalo aquí para continuar. Vence en 10 minutos.' } }];\n}\n\nif (candidatos.length) {   // escribio un numero pero no es su codigo\n  const intentos = (otp.fase === 'empleado' ? (otp.intentos || 0) : 0) + 1;\n  if (intentos >= MAX_INTENTOS) return [{ json: bloquear() }];\n  const expira = otp.fase === 'empleado' ? otp.expira : ahora + VENTANA;\n  return [{ json: { estado: 'fallo', numero,\n    otpValor: JSON.stringify({ fase: 'empleado', intentos, expira }), otpTtl: Math.max(1, expira - ahora),\n    output: `❌ El código de empleado no es correcto. Le ${MAX_INTENTOS - intentos === 1 ? 'queda' : 'quedan'} ${plural(MAX_INTENTOS - intentos, 'intento', 'intentos')}.` } }];\n}\n\nreturn [{ json: { estado: 'recordar', numero,\n  output: '🔐 *LIB-IA · Verificación de acceso*\\n\\nPara continuar, escriba su *código de empleado*.' } }];\n"
+      },
+      "id": "bfa1b1f9-177e-4841-af52-f24fd35b2121",
+      "name": "Verificar identidad",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2736,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c32245ba-8974-4e45-b9b0-549f548bbae0",
+              "leftValue": "={{ $json.estado }}",
+              "rightValue": "ok",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b5506b36-9100-4385-bee2-b0d9d8ce4d13",
+      "name": "¿Verificado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2544,
+        192
+      ],
+      "notes": "Si llegó otro mensaje en los 8s, este se descarta"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e0792af9-69cf-4e09-95d8-6fdbaa82fc82",
+              "leftValue": "={{ $json.estado }}",
+              "rightValue": "nuevo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "72402db6-f762-4b33-829f-275e42f51c19",
+      "name": "¿Recién verificado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2352,
+        432
+      ],
+      "notes": "Si llegó otro mensaje en los 8s, este se descarta"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=auth:{{ $json.numero }}",
+        "value": "={{ $json.authValor }}",
+        "expire": true,
+        "ttl": "={{ $json.authTtl }}"
+      },
+      "id": "aacb2912-64dc-450a-b5d6-a72a950c9b11",
+      "name": "Auth SET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -2128,
+        352
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "propertyName": "otp",
+        "key": "=otp:{{ $('Preparar entrada').first().json.numero }}",
+        "options": {}
+      },
+      "id": "b627d16b-25d1-48bb-9391-b7776d417161",
+      "name": "OTP GET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -2928,
+        192
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "=otp:{{ $json.numero }}",
+        "value": "={{ $json.otpValor }}",
+        "expire": true,
+        "ttl": "={{ $json.otpTtl }}"
+      },
+      "id": "a4f19d43-f691-4606-b0a3-87174a123c45",
+      "name": "OTP SET",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -1888,
+        752
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "key": "=otp:{{ $json.numero }}"
+      },
+      "id": "2dd15e6c-538d-4387-b146-3f8e9f7cca95",
+      "name": "OTP DEL",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [
+        -2128,
+        512
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "redis": {
+          "id": "m50PkXlLHHOHsZoI",
+          "name": "Redis account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "8b9604f2-b0a5-4a74-8f95-5f9a55aaa865",
+              "leftValue": "={{ $json.estado }}",
+              "rightValue": "enviar",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a7fe1830-76dd-4ca8-83f2-70b9d912e039",
+      "name": "¿Enviar código?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -2128,
+        672
+      ],
+      "notes": "Si llegó otro mensaje en los 8s, este se descarta"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6826fef5-1269-45f1-9950-ab3e4cbfaef5",
+              "leftValue": "={{ $json.estado }}",
+              "rightValue": "fallo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c6a66b5b-2152-4365-aa49-dad08cc28f9f",
+      "name": "¿Guardar intento?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1888,
+        1072
+      ],
+      "notes": "Si llegó otro mensaje en los 8s, este se descarta"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api-correos.byb.gt/api/emails/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-correlation-id",
+              "value": "=libia-{{ $json.numero }}-{{ Date.now() }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  to: [$json.correo],\n  subject: 'LIB-IA · Código de verificación',\n  body: 'Su código de verificación para LIB-IA es: ' + $json.codigo + '. Vence en 10 minutos. Si usted no lo solicitó, ignore este correo y avise a Informática.',\n  priority: 'high',\n  templateData: {\n    companyName: 'B&B',\n    headerTitle: 'LIB-IA · Verificación de acceso',\n    footerText: 'Mensaje generado automáticamente por LIB-IA'\n  }\n}) }}",
+        "options": {
+          "timeout": 15000,
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "id": "247b8a26-7664-4731-beb5-c584ec0a1833",
+      "name": "Enviar correo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1888,
+        912
+      ],
+      "onError": "continueRegularOutput",
+      "notes": "Reemplazar TU_API_KEY por la apikey de Evolution"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b13f3626-0d4d-4050-952e-c642aa99a6c3",
+              "leftValue": "={{ $json.nivel || '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d820a00b-ea5a-41f0-8eeb-bca1e37242df",
+      "name": "¿Detalle por nivel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -880,
+        900
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SET NOCOUNT ON;\nEXEC dbo.usp_ReporteComercialDetalle\n     @Anio   = {{ $('Analizar mensaje').first().json.anio }},\n     @Mes    = {{ $('Analizar mensaje').first().json.mes }},\n     @Nivel  = '{{ $('Analizar mensaje').first().json.nivel }}',\n     @Filtro = {{ $('Analizar mensaje').first().json.termino ? \"'\" + $('Analizar mensaje').first().json.termino + \"'\" : 'NULL' }},\n     @Top    = {{ $('Analizar mensaje').first().json.top }};",
+        "options": {}
+      },
+      "id": "730ee3bb-5c5d-4e44-834d-b0b699377541",
+      "name": "SQL Detalle",
+      "type": "n8n-nodes-base.microsoftSql",
+      "typeVersion": 1.1,
+      "position": [
+        -656,
+        900
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "microsoftSql": {
+          "id": "MYKRUGUDkDkQeb6m",
+          "name": "Microsoft SQL account"
+        }
+      },
+      "notes": "Detalle por vendedor/cliente/familia/producto"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Texto del detalle por vendedor / cliente / familia / producto.\n// Lee las columnas de forma defensiva y calcula los % aqui,\n// asi no depende de como se llamen exactamente en el proc.\n\nconst p = $('Analizar mensaje').first().json;\nconst filas = $input.all().map(i => i.json).filter(f => f && (f.Nombre || f.Clave));\n\nconst MESES = ['','enero','febrero','marzo','abril','mayo','junio',\n  'julio','agosto','septiembre','octubre','noviembre','diciembre'];\nconst periodo = `${MESES[p.mes]} ${p.anio}`;\nconst TITULO = { VENDEDOR:'vendedor', CLIENTE:'cliente', FAMILIA:'familia', PRODUCTO:'producto' };\nconst esCajas = p.unidad === 'cajas';\nconst u = esCajas ? 'cajas' : 'Q';\n\nif (!filas.length) {\n  const que = p.termino ? `*${p.termino}*` : TITULO[p.nivel];\n  return [{ json: { numero: p.numero,\n    output: `No encontré información de ${que} para ${periodo}.\\n\\nPruebe con otro nombre, o escriba *${TITULO[p.nivel]}s* para ver los primeros 10.` } }];\n}\n\nconst num  = (v) => Number(v) || 0;\nconst V    = (f) => num(esCajas ? f.Venta_Cajas : f.Venta_Valores);\nconst P    = (f) => num(esCajas ? f.Ppto_Cajas  : f.Ppto_Valores);\nconst L    = (f) => num(esCajas ? f.LY_Cajas    : f.LY_Valores);\nconst n0   = (v) => Math.round(v).toLocaleString('es-GT');\nconst sem  = (x) => x >= 100 ? '🟢' : x >= 85 ? '🟡' : '🔴';\nconst mk   = (x) => x >= 100 ? '+'  : x >= 85 ? '~'  : '!';\nconst corta = (s, n) => { s = String(s || '').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };\n\n// totales de lo mostrado\nconst tV = filas.reduce((a,f) => a + V(f), 0);\nconst tP = filas.reduce((a,f) => a + P(f), 0);\nconst tL = filas.reduce((a,f) => a + L(f), 0);\nconst tPct = tP ? tV / tP * 100 : 0;\nconst tAA  = tL ? (tV / tL * 100 - 100) : null;\n\nconst peores = p.top < 0;\nconst enc = p.termino\n  ? `*${TITULO[p.nivel].toUpperCase()}: ${p.termino.toUpperCase()}*`\n  : `*${peores ? 'MENOR VENTA' : 'MAYOR VENTA'} POR ${TITULO[p.nivel].toUpperCase()}*`;\n\nlet out = `${enc}\\n_${periodo} · ${esCajas ? 'Cajas' : 'Valores'}_\\n\\n`;\nout += `> Venta *${n0(tV)}* ${u}\\n`;\nif (tP) out += `> Meta  ${n0(tP)} ${u}\\n> ${sem(tPct)} *${tPct.toFixed(1)}%* del presupuesto\\n`;\nif (tAA !== null) out += `> ${tAA >= 0 ? '▲' : '▼'} ${tAA.toFixed(1)}% vs año anterior\\n`;\n\n// tabla monospace: nombre | venta | %ppto\nconst ANCHO = 20;\nlet tabla = 'NOMBRE'.padEnd(ANCHO) + 'VENTA'.padStart(8) + '  %PPTO\\n';\ntabla += '─'.repeat(ANCHO + 15) + '\\n';\nfor (const f of filas) {\n  const pct = P(f) ? V(f) / P(f) * 100 : null;\n  tabla += corta(f.Nombre || f.Clave, ANCHO - 1).padEnd(ANCHO)\n        + n0(V(f)).padStart(8)\n        + (pct === null ? '      -' : (mk(pct) + pct.toFixed(1).padStart(6))) + '\\n';\n}\n\nout += '\\n```\\n' + tabla + '```\\n';\n\nif (!p.termino) {\n  out += `_Los ${Math.abs(p.top)} de ${peores ? 'menor' : 'mayor'} venta_\\n`;\n}\nif (filas[0] && filas[0].Gerencia && p.nivel !== 'FAMILIA' && p.nivel !== 'PRODUCTO') {\n  const gs = [...new Set(filas.map(f => f.Gerencia).filter(Boolean))];\n  if (gs.length === 1) out += `_Gerencia: ${gs[0]}_\\n`;\n}\nout += `\\n_Escriba por ejemplo:_ _cliente walmart_ _·_ _familia mayonesa_`;\n\nreturn [{ json: { numero: p.numero, output: out } }];\n"
+      },
+      "id": "74021377-b0f3-4784-8c83-cfb33be2cf58",
+      "name": "Armar detalle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -432,
+        900
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Evolution": {
+      "main": [
+        [
+          {
+            "node": "Preparar entrada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar entrada": {
+      "main": [
+        [
+          {
+            "node": "¿Procesar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Procesar?": {
+      "main": [
+        [
+          {
+            "node": "Debounce SET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debounce SET": {
+      "main": [
+        [
+          {
+            "node": "Esperar 8s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esperar 8s": {
+      "main": [
+        [
+          {
+            "node": "Debounce GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debounce GET": {
+      "main": [
+        [
+          {
+            "node": "¿Último mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Último mensaje?": {
+      "main": [
+        [
+          {
+            "node": "Auth GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar mensaje": {
+      "main": [
+        [
+          {
+            "node": "¿Es consulta?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es consulta?": {
+      "main": [
+        [
+          {
+            "node": "¿Detalle por nivel?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respuesta directa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respuesta directa": {
+      "main": [
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache GET": {
+      "main": [
+        [
+          {
+            "node": "¿Hay cache?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Hay cache?": {
+      "main": [
+        [
+          {
+            "node": "Preparar datos",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SQL Reporte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL Reporte": {
+      "main": [
+        [
+          {
+            "node": "Cache SET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache SET": {
+      "main": [
+        [
+          {
+            "node": "Preparar datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar datos": {
+      "main": [
+        [
+          {
+            "node": "Armar tarjeta",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Render PNG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar tarjeta": {
+      "main": [
+        [
+          {
+            "node": "LIB-IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LIB-IA": {
+      "main": [
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render PNG": {
+      "main": [
+        [
+          {
+            "node": "Preparar imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Azure OpenAI": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "LIB-IA",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memoria Redis": {
+      "ai_memory": [
+        [
+          {
+            "node": "LIB-IA",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar imagen": {
+      "main": [
+        [
+          {
+            "node": "Enviar imagen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth GET": {
+      "main": [
+        [
+          {
+            "node": "OTP GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar identidad": {
+      "main": [
+        [
+          {
+            "node": "¿Verificado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Verificado?": {
+      "main": [
+        [
+          {
+            "node": "Analizar mensaje",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Recién verificado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Recién verificado?": {
+      "main": [
+        [
+          {
+            "node": "Auth SET",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "OTP DEL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Enviar código?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OTP GET": {
+      "main": [
+        [
+          {
+            "node": "Verificar identidad",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Enviar código?": {
+      "main": [
+        [
+          {
+            "node": "OTP SET",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar correo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Guardar intento?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Guardar intento?": {
+      "main": [
+        [
+          {
+            "node": "OTP SET",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Detalle por nivel?": {
+      "main": [
+        [
+          {
+            "node": "SQL Detalle",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Cache GET",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SQL Detalle": {
+      "main": [
+        [
+          {
+            "node": "Armar detalle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar detalle": {
+      "main": [
+        [
+          {
+            "node": "Enviar texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "266ff1b1-68f4-4ebf-a7b3-84ffdeecc310",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d01c3047f4df3ecff485e42b3f6c968ca5db6addaf393885364a42557eb2af7d"
+  },
+  "nodeGroups": [],
+  "id": "64R2DJ759zABkE3d",
+  "tags": []
+}
